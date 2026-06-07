@@ -180,8 +180,6 @@ function SettingsPage({ members, setMembers, dark, loggedIn, onLogin, onLogout, 
 
   return (
     <div className="settings-page">
-
-      {/* Google Kalender */}
       <div className="settings-section" style={{background:surface,border:`1px solid ${border}`}}>
         <h3 className="settings-title" style={{color:text}}>📅 Google Kalender</h3>
         {loggedIn ? (
@@ -197,7 +195,6 @@ function SettingsPage({ members, setMembers, dark, loggedIn, onLogin, onLogout, 
         )}
       </div>
 
-      {/* Kalenderval */}
       {loggedIn && calendars.length > 0 && (
         <div className="settings-section" style={{background:surface,border:`1px solid ${border}`}}>
           <h3 className="settings-title" style={{color:text}}>📋 Välj kalendrar</h3>
@@ -208,8 +205,8 @@ function SettingsPage({ members, setMembers, dark, loggedIn, onLogin, onLogout, 
                 <div className="cal-dot" style={{background: cal.backgroundColor || "#3b82f6"}}/>
                 <span className="cal-name" style={{color:text}}>{cal.summary}</span>
                 <button
-                  className={`cal-toggle ${enabledCalendars.includes(cal.id) ? "cal-toggle--on" : "cal-toggle--off"}`}
-                  style={{background: enabledCalendars.includes(cal.id) ? "#3b82f6" : (dark?"#334155":"#e2e8f0")}}
+                  className="cal-toggle"
+                  style={{background: enabledCalendars.includes(cal.id) ? "#3b82f6" : (dark?"#334155":"#e2e8f0"), color: enabledCalendars.includes(cal.id) ? "#fff" : (dark?"#94a3b8":"#64748b")}}
                   onClick={() => toggleCalendar(cal.id)}>
                   {enabledCalendars.includes(cal.id) ? "På" : "Av"}
                 </button>
@@ -219,7 +216,6 @@ function SettingsPage({ members, setMembers, dark, loggedIn, onLogin, onLogout, 
         </div>
       )}
 
-      {/* Familjemedlemmar */}
       <div className="settings-section" style={{background:surface,border:`1px solid ${border}`}}>
         <h3 className="settings-title" style={{color:text}}>👨‍👩‍👧‍👦 Familjemedlemmar</h3>
         <p className="settings-desc" style={{color:subtext}}>Händelser som innehåller ett namn kopplas automatiskt till den personen.</p>
@@ -247,7 +243,6 @@ function SettingsPage({ members, setMembers, dark, loggedIn, onLogin, onLogout, 
         <button className="settings-btn settings-btn--primary" onClick={addMember}>+ Lägg till medlem</button>
       </div>
 
-      {/* iPad tips */}
       <div className="settings-section" style={{background:surface,border:`1px solid ${border}`}}>
         <h3 className="settings-title" style={{color:text}}>📱 Lägg till på hemskärmen</h3>
         <p className="settings-desc" style={{color:subtext}}>På iPad: tryck på dela-ikonen i Safari och välj <strong>"Lägg till på hemskärmen"</strong> — då fungerar appen som en native app utan webbläsarens adressfält.</p>
@@ -267,6 +262,7 @@ export default function FamilyPlanner() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tokenClient, setTokenClient] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
   const [calendars, setCalendars] = useState([]);
   const [enabledCalendars, setEnabledCalendars] = useState(() => {
     try { return JSON.parse(localStorage.getItem("enabledCalendars")) || []; } catch { return []; }
@@ -278,6 +274,7 @@ export default function FamilyPlanner() {
   useEffect(() => { localStorage.setItem("familyMembers", JSON.stringify(members)); }, [members]);
   useEffect(() => { localStorage.setItem("enabledCalendars", JSON.stringify(enabledCalendars)); }, [enabledCalendars]);
 
+  // Ladda Google script
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://accounts.google.com/gsi/client";
@@ -285,12 +282,26 @@ export default function FamilyPlanner() {
       const tc = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
-        callback: (resp) => { if(resp.access_token) fetchEvents(resp.access_token); },
+        callback: (resp) => {
+          if(resp.access_token) {
+            setAccessToken(resp.access_token);
+            fetchEvents(resp.access_token);
+          }
+        },
       });
       setTokenClient(tc);
     };
     document.body.appendChild(script);
   }, []);
+
+  // Auto-refresh token var 45:e minut
+  useEffect(() => {
+    if(!accessToken || !tokenClient) return;
+    const interval = setInterval(() => {
+      tokenClient.requestAccessToken({ prompt: "" });
+    }, 45 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [accessToken, tokenClient]);
 
   const fetchEvents = async (token) => {
     setLoading(true);
@@ -325,12 +336,14 @@ export default function FamilyPlanner() {
       const unique = merged.filter((e,i,arr) => arr.findIndex(x=>x.id===e.id)===i);
       setEvents(parseGoogleEvents(unique, members));
       setLoggedIn(true);
-    } catch(e) { console.error(e); }
+    } catch(e) {
+      console.error(e);
+    }
     setLoading(false);
   };
 
   const handleLogin = () => { if(tokenClient) tokenClient.requestAccessToken(); };
-  const handleLogout = () => { setLoggedIn(false); setEvents([]); setCalendars([]); };
+  const handleLogout = () => { setLoggedIn(false); setEvents([]); setCalendars([]); setAccessToken(null); };
 
   const navigate = (dir) => {
     const next = new Date(currentDate);
@@ -422,7 +435,7 @@ export default function FamilyPlanner() {
         .calendar-row{border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;}
         .cal-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
         .cal-name{flex:1;font-weight:700;font-size:0.9rem;}
-        .cal-toggle{border:none;border-radius:20px;padding:4px 12px;font-family:'Nunito',sans-serif;font-weight:800;font-size:0.8rem;cursor:pointer;color:#fff;transition:background 0.2s;}
+        .cal-toggle{border:none;border-radius:20px;padding:4px 12px;font-family:'Nunito',sans-serif;font-weight:800;font-size:0.8rem;cursor:pointer;transition:background 0.2s;}
         .member-list{display:flex;flex-direction:column;gap:8px;}
         .member-row{border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;}
         .member-colors{display:flex;gap:4px;flex-wrap:wrap;}
